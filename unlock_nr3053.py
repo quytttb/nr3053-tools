@@ -49,24 +49,19 @@ _BROWSER_HEADERS = {
     ),
 }
 
-# MD5-crypt ($1$) hash for /etc/shadow — bí danh với firmware (libcrypt).
-# Python 3.13+ đã xóa stdlib `crypt`; thử: stdlib → PyPI crypt-r → openssl(1).
-
-
 def make_md5_crypt(password: str) -> str:
-    salt = "$1$rootsalt"
+    # MD5-crypt ($1$) hash cho /etc/shadow — bí danh với firmware (libcrypt).
+    # Thử: passlib → openssl(1).
+    
+    # 1. Thử thư viện 'passlib' (Đa nền tảng, chạy tốt trên Windows, Linux, macOS)
     try:
-        import crypt as _crypt_mod  # type: ignore[import-not-found]
-
-        return _crypt_mod.crypt(password, salt)
-    except ModuleNotFoundError:
+        from passlib.hash import md5_crypt
+        # passlib dùng salt thuần không kèm prefix $1$
+        return md5_crypt.using(salt="rootsalt").hash(password)
+    except (ModuleNotFoundError, ImportError):
         pass
-    try:
-        import crypt_r as _crypt_mod
 
-        return _crypt_mod.crypt(password, salt)
-    except ImportError:
-        pass
+    # 2. Thử lệnh hệ thống 'openssl' (openssl dùng -salt 'rootsalt' và -1 cho MD5-crypt)
     try:
         cp = subprocess.run(
             ["openssl", "passwd", "-1", "-salt", "rootsalt", password],
@@ -79,15 +74,14 @@ def make_md5_crypt(password: str) -> str:
             return out
     except (FileNotFoundError, subprocess.CalledProcessError):
         pass
+
+    # Nếu cả hai đều thất bại
     print(
         "ERROR: Không tạo được hash MD5-crypt cho mật khẩu root.\n"
-        "  Python 3.13+ không có module `crypt`. Cài một trong các cách sau:\n"
-        "    pip install crypt-r\n"
-        "  hoặc (Debian/Ubuntu): sudo apt install openssl  (đã có sẵn thường dùng openssl passwd)",
+        "  Vui lòng cài đặt thư viện 'passlib' hoặc đảm bảo hệ thống có sẵn lệnh `openssl`.",
         file=sys.stderr,
     )
     sys.exit(1)
-
 
 def check_port(host, port, timeout=3):
     try:
